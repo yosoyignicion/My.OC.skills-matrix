@@ -1,6 +1,6 @@
 ---
 name: caching-patterns-write-through
-description: "Cache-aside (lazy loading): application checks cache first on read; on miss, loads from database and populates cache"
+description: "Cache-aside (lazy loading): application checks cache first on read; on miss, loads from database and populates cache. Covers SWR, TanStack Query, ISR, Incremental Static Regeneration, React Compiler, performance web, Core Web Vitals, stale-while-revalidate, cache invalidation, streaming SSR, suspense, PPR, Data Cache"
 ---
 # Caching Patterns: Write-Through, Write-Behind & Cache-Aside
 
@@ -401,4 +401,213 @@ tags: [caching, cache-aside, write-through, write-behind, redis, invalidation, s
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Jerarquía de Caché en Next.js App Router
+
+| Capa | Qué cachea | Dónde | Duración |
+|------|-----------|-------|----------|
+| Data Cache | Resultados de `fetch()` | Servidor | Persistente (hasta revalidar) |
+| Full Route Cache | HTML y RSC payload | Servidor | Build time o `revalidate` |
+| Router Cache | RSC payload de navegación | Cliente | Sesión o 30s default |
+| Static Rendering | Páginas estáticas | Edge/Servidor | Hasta rebuild |
+| Cache Components | Componente | TTL manual | `unstable_cache.invalidate` |
+
+```typescript
+// Time-based revalidation
+const data = await fetch('https://api.example.com/posts', { next: { revalidate: 3600 } })
+// On-demand via tags
+const data = await fetch('https://api.example.com/posts', { next: { tags: ['posts'] } })
+```
+
+### Stale-While-Revalidate (SWR)
+
+```
+Solicitud → servir desde caché (si existe) → fetch en background → actualizar caché → próxima solicitud recibe dato fresco
+```
+
+- **Tiempo de respuesta inmediato** (caché caliente)
+- **Datos eventualmente consistentes**
+- **Tolerancia a fallos de red** (sirve stale si fetch falla)
+
+### SWR Library (Vercel) 2.x
+
+```typescript
+import useSWR from 'swr'
+
+const fetcher = (url) => fetch(url).then((r) => r.json())
+
+function Profile() {
+  const { data, error, isLoading, isValidating, mutate } = useSWR('/api/user', fetcher, {
+    refreshInterval: 30000,
+    revalidateOnFocus: true,
+    dedupingInterval: 2000,
+    errorRetryCount: 3,
+    errorRetryInterval: 5000,
+    keepPreviousData: true
+  })
+  if (error) return <ErrorView />
+  if (isLoading) return <Skeleton />
+  return <div>{data.name}</div>
+}
+```
+
+- `useSWRMutation` para mutaciones sin actualizar cache.
+- `mutate('/api/user', { name: 'Optimistic' }, false)` para optimistic update con rollback.
+
+### TanStack Query v5
+
+```typescript
+import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,  // 5min
+      gcTime: 30 * 60 * 1000,     // 30min garbage collection (antes cacheTime)
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000)
+    }
+  }
+})
+
+function usePosts() {
+  return useQuery({
+    queryKey: ['posts', { page: 1 }],
+    queryFn: () => fetch('/api/posts?page=1').then((r) => r.json()),
+    staleTime: 1000 * 60 * 5,
+    select: (data) => data.posts,
+    placeholderData: keepPreviousData
+  })
+}
+
+// Optimistic update con rollback
+function useUpdatePost() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (updatedPost) => fetch(`/api/posts/${updatedPost.id}`, { method: 'PUT', body: JSON.stringify(updatedPost) }).then((r) => r.json()),
+    onMutate: async (newPost) => {
+      await queryClient.cancelQueries({ queryKey: ['posts'] })
+      const previousPosts = queryClient.getQueryData(['posts'])
+      queryClient.setQueryData(['posts'], (old) => old.map(p => p.id === newPost.id ? { ...p, ...newPost } : p))
+      return { previousPosts }
+    },
+    onError: (err, newPost, context) => queryClient.setQueryData(['posts'], context.previousPosts),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['posts'] })
+  })
+}
+```
+
+### SWR vs TanStack Query vs RTK Query
+
+| Característica | SWR 2.x | TanStack Query v5 | RTK Query |
+|---------------|---------|-------------------|-----------|
+| Bundle size | ~4.5KB | ~11KB | ~13KB (incluye Redux) |
+| Garbage collection | No (deduping) | `gcTime` | `keepUnusedDataFor` |
+| Infinite queries | No nativo | Sí | Sí |
+| Optimistic updates | Manual | Built-in + rollback | Built-in |
+| Suspense mode | Sí | Sí | Sí |
+| Devtools | No | Sí | Redux Devtools |
+
+### Incremental Static Regeneration (ISR)
+
+```typescript
+// app/page.jsx
+export const revalidate = 3600
+
+// app/api/revalidate/route.js
+import { revalidatePath, revalidateTag } from 'next/cache'
+
+export async function POST(request) {
+  if (searchParams.get('secret') !== process.env.REVALIDATION_SECRET)
+    return Response.json({ error: 'Invalid secret' }, { status: 401 })
+  revalidatePath('/posts')
+  revalidatePath('/posts/[slug]', 'page')
+  revalidateTag('posts')
+  return Response.json({ revalidated: true })
+}
+```
+
+| Tipo | Generación | Cache | Ideal para |
+|------|-----------|-------|-----------|
+| Static | Build time | Edge/Servidor | Páginas públicas, blog, docs |
+| ISR | Build + runtime | Servidor | Contenido que cambia cada cierto tiempo |
+| SSR | Cada request | No | Datos personalizados por usuario |
+| SSG with ISR | Build + on-demand | Servidor + tags | CMS, ecommerce, directorios |
+
+### Partial Prerendering (PPR)
+
+```typescript
+// next.config.js
+const nextConfig = { experimental: { ppr: true } }
+
+// app/page.jsx
+import { Suspense } from 'react'
+
+export default function Page() {
+  return (
+    <div>
+      <nav><h1>Mi Tienda</h1><CartButton /></nav>
+      <Suspense fallback={<ProductSkeleton />}><ProductList /></Suspense>
+      <Suspense fallback={<div>Loading user...</div>}><UserGreeting /></Suspense>
+    </div>
+  )
+}
+```
+
+Shell estático se sirve instantáneamente desde edge cache. Holes dinámicos se streamean.
+
+### React Compiler (React Forget)
+
+```typescript
+// next.config.js — Next.js 15+
+const nextConfig = { experimental: { reactCompiler: true } }
+```
+
+```bash
+npm install -D eslint-plugin-react-compiler
+```
+
+- Memoiza automáticamente valores derivados, callbacks, componentes. Elimina necesidad de `useMemo`/`useCallback`/`React.memo`.
+- Analiza flujo de datos del componente e inserta memoizaciones en build time.
+- Asume Rules of React (no mutación directa, hooks con dependencias estables).
+
+### Core Web Vitals
+
+- **LCP < 2.5s:** `next/image` con `priority` + `fetchPriority="high"`, AVIF/WebP formats, `deviceSizes`/`imageSizes` config.
+- **CLS < 0.1:** `width`/`height` en imágenes, `aspect-ratio` CSS, `min-height` para contenedores, `font-display: swap` + `size-adjust`.
+- **INP < 200ms (reemplazó FID marzo 2024):** `useDeferredValue(query)` para priorizar input sobre resultados, debounce en handlers pesados, `content-visibility: auto` para off-screen, Web Workers para procesamiento.
+
+### Streaming SSR y Suspense
+
+```typescript
+// app/dashboard/page.jsx
+import { Suspense } from 'react'
+
+export default function DashboardPage() {
+  return (
+    <div className="grid gap-6">
+      <h1>Dashboard</h1>
+      <Suspense fallback={<ChartSkeleton />}><SalesChart /></Suspense>
+      <Suspense fallback={<StatsSkeleton />}><UserStats /></Suspense>
+      <Suspense fallback={<OrdersSkeleton />}><RecentOrders /></Suspense>
+    </div>
+  )
+}
+```
+
+### Resumen de Estrategias
+
+| Estrategia | Latencia | Frescura datos | Esfuerzo | Caso de uso |
+|-----------|----------|----------------|----------|-------------|
+| Client SWR | Inmediata | Eventual | Bajo | APIs públicas, user data |
+| TanStack Query | Inmediata | Configurable | Medio | Apps complejas, dashboards |
+| ISR + revalidate | Inmediata | Diferida | Bajo | CMS, blogs, catálogos |
+| PPR | Inmediata | Mixta | Medio | Landing pages con datos |
+| React Compiler | N/A | N/A | Mínimo | Cualquier app React |
+| Streaming SSR | Progresivo | Fresco siempre | Medio | Dashboards, contenido dinámico |
+| Cache-Aside/Redis | Inmediata | Eventual | Medio | APIs internas, hot data |
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with performance-caching-web)*

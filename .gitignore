@@ -24,3 +24,6 @@ Thumbs.db
 # Config overrides (user-specific)
 opencode.local.json
 opencode.local.jsonc
+
+# Legacy v1 skill — superseded by second-termux-v2 in My.OpenCode.Conf bundle
+skills-matrix/second-termux-processes/

@@ -1,6 +1,6 @@
 ---
 name: a11y-accessibility-wcag
-description: "La accesibilidad web (a11y) garantiza que las personas con discapacidades puedan percibir, operar, entender y navegar por el contenido web"
+description: "La accesibilidad web (a11y) garantiza que las personas con discapacidades puedan percibir, operar, entender y navegar por el contenido web. Covers WCAG 2.2, contraste, inclusión, daltonismo, ARIA, discapacidad visual, diseño inclusivo, Microsoft Inclusive Design Toolkit"
 ---
 # Accessibility (a11y) & WCAG
 
@@ -372,4 +372,166 @@ tags: [accessibility, a11y, wcag, aria, inclusive-design, frontend]
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Fórmula de Luminancia Relativa (WCAG 2.1, 1.4.3)
+
+```
+L = 0.2126 × R_sRGB + 0.7152 × G_sRGB + 0.0722 × B_sRGB
+Ratio = (L1 + 0.05) / (L2 + 0.05)
+```
+
+### Niveles de Cumplimiento
+
+| Nivel | Texto normal | Texto grande (≥18pt o ≥14pt bold) | Componentes UI |
+|-------|-------------|-----------------------------------|----------------|
+| AA | 4.5:1 | 3:1 | 3:1 |
+| AAA | 7:1 | 4.5:1 | — |
+
+### Paleta Validada (Caso Práctico)
+
+| Rol | Hex | Contraste sobre #111 | Nivel |
+|-----|-----|---------------------|-------|
+| Primario | #DC2626 | 4.5:1 | AA |
+| Secundario (decorativo) | #991B1B | 2.8:1 | — |
+| Acento | #FFFFFF | 18:1 | AAA |
+| Detalle | #FF1744 | 6.1:1 | AA |
+
+**Caso:** Rojo #DC2626 sobre #1A1A1A = 4.51:1 — cumple AA por poco. Para AAA se necesita rojo más claro.
+
+### Mitigaciones cuando no se alcanza el ratio
+
+1. Añadir stroke de alto contraste (1px border)
+2. Ajustar luminancia (+10% brightness en texto)
+3. Sombra/glow que mejora percepción sin cambiar color base
+4. Fondo de protección (rectángulo semitransparente detrás del texto)
+
+### Microsoft Inclusive Design Toolkit — 3 Principios
+
+1. **Reconocer la exclusión:** Diseñar desde el borde. Si funciona para baja visión en pantalla pequeña con mala luz, funciona para todos.
+2. **Resolver para uno, extender a muchos:** Alto contraste ayuda también en exteriores. Iconos sin texto ayudan a no hablantes nativos.
+3. **Aprender de la diversidad:** 7 dimensiones relevantes: visión, físico, cognitivo, lenguaje, cultural, generacional.
+
+### Percepción Universal
+
+La insignia/componente debe comunicar por al menos **dos canales sensoriales**. No usar solo color — añadir forma + texto.
+
+```xml
+<!-- Excluyente: solo color -->
+<path d="..." fill="#DC2626"/>
+
+<!-- Inclusivo: color + forma + texto -->
+<path d="..." fill="#DC2626"/>
+<path d="estrella" fill="#FFF" opacity="0.8"/>
+<text>NV. 5</text>
+```
+
+### Daltonismo — Tipos y Prevalencia
+
+| Tipo | Prevalencia | Problema |
+|------|-------------|----------|
+| Deuteranopia | 6% hombres | Rojo/verde indistinguibles |
+| Protanopia | 2% hombres | Rojo aparece casi negro sobre fondo oscuro |
+| Tritanopia | 0.01% | Azul/amarillo confusos |
+
+**Simulación:** Color Oracle (filtro full-screen), Stark (plugin Figma), Chrome DevTools (Emulate vision deficiencies).
+
+### Baja Visión — Tamaños Mínimos
+
+| Elemento | Tamaño mínimo a 36×36 |
+|----------|----------------------|
+| Texto | 8px |
+| Icono simple | 12×12px (~33%) |
+| Borde funcional | 2px (preferible 3px) |
+| Stroke | 1.5px mínimo absoluto |
+
+Componente debe ser reconocible al 200% de zoom.
+
+### Screen Readers — ARIA para SVG
+
+```html
+<!-- MAL: solo descripción visual -->
+<img src="badge.png" alt="Círculo rojo con número 5">
+
+<!-- BIEN: significado + contexto -->
+<img src="badge.png" alt="Insignia Nivel 5: Velocidad máxima alcanzada" role="img">
+
+<!-- SVG inline con ARIA -->
+<svg role="img" aria-label="Insignia Nivel 5 - Velocidad">
+  <title>Nivel 5: Velocidad</title>
+  <desc>Escudo rojo con número 5 en el centro, borde plateado</desc>
+</svg>
+```
+
+ARIA para SVG:
+- `role="img"` trata el SVG como imagen
+- `aria-label` o `aria-labelledby` para texto descriptivo
+- `aria-hidden="true"` para componentes decorativos
+
+### Touch Targets
+
+| Estándar | Mínimo |
+|----------|--------|
+| Apple HIG | 44×44 pt |
+| Material Design | 48×48 dp |
+| WCAG 2.5.5 | 44×44 px |
+
+Si el componente mide 36×36px pero es interactivo, usar wrapper de 44×44px con padding.
+
+### High Contrast Mode y Reduced Motion
+
+```css
+@media (forced-colors: active) {
+  .badge-img { border: 1px solid CanvasText; }
+  .badge-svg path { fill: CanvasText; }
+}
+
+.badge-wrapper:focus-visible {
+  outline: 2px solid #DC2626;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge-animated { animation: none; }
+}
+```
+
+### Inclusión Cultural en Simbología
+
+Cada símbolo tiene significados distintos según cultura:
+
+| Símbolo | Occidente | Latinoamérica | Medio Oriente |
+|---------|-----------|---------------|---------------|
+| Calavera | Peligro | Celebración/Muerte | Muerte, tabú |
+| Cruz | Religión/Decoración | Religión | Religión |
+| Cuernos | Metal/Rebeldía | Metal/Rebeldía | Ofensivo |
+| Ojo | Vigilancia | Neutral | Mal de ojo |
+
+**Reglas:** No usar rayo doble simétrico (evoca SS nazi — ilegal en Alemania). Calavera contextualizada. Símbolos religiosos solo si el tema lo requiere. Sin apropiación de símbolos sagrados indígenas.
+
+### Checklist Final de Accesibilidad Inclusiva
+
+- [ ] Todos los textos funcionales ≥ 4.5:1
+- [ ] Iconos informativos ≥ 3:1
+- [ ] No depende solo de color para comunicar
+- [ ] Alt text descriptivo con significado (no descripción visual)
+- [ ] Touch target ≥ 44×44px
+- [ ] Zoom al 200% mantiene legibilidad
+- [ ] Sin animaciones > 3Hz
+- [ ] Testeado en 3 tipos de daltonismo
+- [ ] Funciona en modo claro y oscuro
+- [ ] Animaciones respetan `prefers-reduced-motion`
+- [ ] Símbolos culturalmente apropiados para audiencia objetivo
+- [ ] axe-core en CI con severidad critical/serious
+
+### Herramientas de Medición
+
+- **axe-core:** Testing automatizado de contraste en SVGs renderizados
+- **WebAIM Contrast Checker:** Cálculo de ratio y sugerencias
+- **Lighthouse:** Reporte integrado en Chrome DevTools
+- **Contrast Finder:** Encuentra variante del color que cumple AAA
+- **Color Oracle / Stark:** Simulación de daltonismo
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with accessibility-design)*

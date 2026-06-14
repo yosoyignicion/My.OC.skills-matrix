@@ -1,6 +1,6 @@
 ---
 name: svg-converter-rasterization
-description: "La conversión de SVG a formatos raster/vector resuelve el problema de compatibilidad: SVG no es soportado nativamente en todos los contextos (impresión, email, algunas plataformas sociales)"
+description: "La conversión de SVG a formatos raster/vector resuelve el problema de compatibilidad: SVG no es soportado nativamente en todos los contextos. Covers SVG, vector, viewBox, svgo, sharp, pngquant, zopfli, WebP, AVIF, WebP lossless, asset pipeline, optimization pipeline"
 ---
 # svg-converter-rasterization
 
@@ -215,4 +215,162 @@ tags: [svg, converter, rasterization, cairosvg, pillow, png, jpg, pdf, batch-con
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem (Cross-ref con svg-generation-programmatic y svg-basics)
+
+### Ecosistema de Conversión y Optimización SVG
+
+```
+SVG Input (raw)
+  → SVGO multipass (AST optimization)
+  → Sharp/rsvg-convert/CairoSVG (rasterización)
+  → pngquant (cuantización paleta)
+  → zopfli (deflate extremo)
+  → Output: PNG/WebP/AVIF
+```
+
+### Sharp (Node.js, basado en libvips) — Preferido para Node
+
+```javascript
+import sharp from 'sharp'
+
+// PNG con paleta indexada
+await sharp(input, { density: 300 })
+  .resize(100, 100, { kernel: 'lanczos3' })
+  .png({ palette: true, colors: 64, compressionLevel: 9 })
+  .toFile('output.png')
+
+// 36×36 con dither
+await sharp(input, { density: 300 })
+  .resize(36, 36, { kernel: 'lanczos3' })
+  .png({ palette: true, colors: 32, compressionLevel: 9, dither: 0.8 })
+  .toFile('output.png')
+
+// WebP lossy
+await sharp(input).resize(36, 36).webp({ lossless: false, quality: 70 }).toFile('output.webp')
+```
+
+**Parámetros clave de Sharp:**
+- `density: 300` — alta resolución para renderizado limpio
+- `kernel: 'lanczos3'` — mejor calidad de escalado
+- `palette: true` — paleta indexada (reduce tamaño)
+- `colors: 64` — balance calidad/peso
+- `compressionLevel: 9` — máxima compresión PNG
+
+### Rango de Tamaños por Configuración (36×36)
+
+| Calidad | Colores | Tamaño | Diferencia visual |
+|---------|---------|--------|-------------------|
+| Alta fidelidad | 100+ | 1.8-2.5KB | Imperceptible |
+| Mediana | 32-64 | 0.8-1.2KB | Imperceptible |
+| Extrema | 8-16 | 0.4-0.6KB | Mínima con dither |
+
+### pngquant — Cuantización Inteligente
+
+```bash
+# Balance calidad/peso óptimo
+pngquant --quality=70-90 --speed 3 --strip --force input.png -o output.png
+# Máxima compresión (Web)
+pngquant --quality=50-80 --speed 1 --strip --force input.png -o output.png
+```
+
+### zopfli — Compresión Deflate Extrema
+
+```bash
+zopflipng -m --iterations=15 input.png output.png
+# input: 1.0KB → output: 0.7KB (-30%)
+```
+
+### CairoSVG (Python) — Usado en svg-converter-rasterization
+
+```python
+from converter import convert, batch_convert
+
+png = convert(svg_str, fmt="png", preset="web")          # 72 DPI
+jpg = convert(svg_str, fmt="jpg", preset="print", quality=90)  # 300 DPI
+pdf = convert(svg_str, fmt="pdf")                         # vector
+
+results = batch_convert(svg_list, fmt="png", preset="screen", max_workers=4)
+```
+
+```bash
+cairosvg input.svg -o output.png
+cairosvg input.svg -o output.pdf
+cairosvg input.svg -o output.jpg --dpi 300
+```
+
+**Transparencia:** `cairosvg.svg2png(bytestring=svg_str.encode(), background_color="transparent")`.
+
+### rsvg-convert (CLI, basado en librsvg, Linux)
+
+```bash
+rsvg-convert -w 800 -h 600 input.svg > output.png
+rsvg-convert -f pdf input.svg > output.pdf
+# Más rápido que CairoSVG en Linux
+```
+
+### Comparativa de Motores
+
+| Motor | Velocidad | Fidelidad | Formatos | Caso de uso |
+|-------|-----------|-----------|----------|-------------|
+| Sharp (Node/libvips) | Muy rápido | Alta | PNG, JPG, WebP, AVIF, GIF | Node.js pipelines, producción |
+| CairoSVG (Python) | Medio | Alta | PNG, JPG, PDF | Python integration |
+| rsvg-convert (Linux) | Rápido | Alta | PNG, PDF, SVG | Linux servers, CI |
+| Puppeteer (Chromium) | Lento | Máxima (CSS completo) | Todos | SVG complejo con CSS moderno |
+| Inkscape CLI | Lento | Alta | PNG, PDF, EPS, SVG | Interactive preview, GUI control |
+
+### Pipeline de Producción Completo (Badge System)
+
+```javascript
+import sharp from 'sharp'
+import { execSync } from 'child_process'
+import { readFile, writeFile, stat } from 'fs/promises'
+
+async function optimizeBadge(inputSVG, output) {
+  // 1. Rasterizar a 36×36
+  const tmp = `/tmp/${Date.now()}.tmp`
+  await sharp(inputSVG, { density: 300 })
+    .resize(36, 36, { kernel: 'lanczos3' })
+    .png({ palette: true, colors: 64, compressionLevel: 9 })
+    .toFile(tmp)
+  
+  // 2. Cuantizar con pngquant
+  execSync(`pngquant --quality=70-90 --speed 3 --force --ext .png "${tmp}"`)
+  
+  // 3. Compresión final con zopflipng
+  execSync(`zopflipng -m --iterations=5 "${tmp}" "${output}"`)
+  
+  const { size } = await stat(output)
+  return size // < 1KB
+}
+```
+
+### Verificación de Integridad
+
+```bash
+# Validar sintaxis XML
+xmllint --noout insignia.svg
+
+# Verificar viewBox
+grep -oP 'viewBox="[^"]*"' insignia.svg
+
+# Contar size
+wc -c insignia.svg
+
+# Verificar consistencia de viewBox
+grep -r 'viewBox' *.svg | grep -v '0 0 100 100'
+
+# Paleta de colores usada
+grep -rE '#[0-9A-Fa-f]{6}' *.svg | sort | uniq -c | sort -rn
+```
+
+Un SVG bien optimizado para insignia (100×100, 3 colores, 1 forma compuesta) debe pesar < 1KB.
+
+### Cross-Reference
+
+- **svg-generation-programmatic:** Genera el SVG con lxml/svg_builder que luego se pasa a este pipeline.
+- **cicd-declarative-pipelines:** Automatiza este pipeline en GitHub Actions.
+- **svg-basics (Skills-o-extra):** Fuente original con anatomía SVG, optimización manual y comandos SVGO.
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with svg-basics)*

@@ -1,6 +1,6 @@
 ---
 name: typescript-type-system
-description: "TypeScript es un superset de JavaScript que añade tipado estático opcional"
+description: "TypeScript es un superset de JavaScript que añade tipado estático opcional. Covers type safety, end-to-end types, tRPC, Zod, ArkType, type-safe APIs, validation, schema validation, runtime types, API contracts, typesafe endpoints, full-stack TypeScript, TanStack Query"
 ---
 # TypeScript Type System
 
@@ -295,4 +295,66 @@ tags: [typescript, types, generics, type-system, frontend, programming-language]
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### El Pipeline End-to-End de Tipos
+
+```
+Database → ORM → API → Client → UI
+   Prisma/   Drizzle   tRPC/   TanStack  React
+   SQLite              REST    Query
+```
+
+Cada capa mantiene tipos derivados automáticamente. Cambio en DB schema propaga al último componente UI.
+
+### tRPC v11 — APIs Type-Safe sin Codegen
+
+- **Sin archivos intermedios:** Define procedures en server, tipos se infieren automáticamente en client.
+- **Configuración server:** `initTRPC.context<Context>().create({ errorFormatter: { zodError } })`. Middleware `isAuthed` lanza `TRPCError({ code: 'UNAUTHORIZED' })`.
+- **Router pattern:** `publicProcedure.input(z.object({...})).query()` o `.mutation()`. Subscripciones WebSocket vía `observable()` + `EventEmitter`.
+- **Client:** `createTRPCReact<AppRouter>()` + `httpBatchLink`. `useQuery`, `useMutation`, `useInfiniteQuery`, `useSubscription`. `utils.user.me.invalidate()` para cache invalidation.
+- **React Query integration nativa:** `useInfiniteQuery({ getNextPageParam })`, optimistic updates, automatic refetch.
+
+### Zod v4 — Runtime Validation
+
+- **Schema first:** `z.object({ email: z.string().email(), age: z.number().int().positive().max(150) })`.
+- **Refinements:** `.refine((val) => /[A-Z]/.test(val) && /[0-9]/.test(val), 'message')` para validaciones custom.
+- **Transforms:** `.transform(val => val.toLowerCase().trim())` para parse + transform.
+- **SuperRefine:** Validación compleja con múltiples errores. `ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['field'] })`.
+- **React Hook Form:** `useForm<FormData>({ resolver: zodResolver(FormSchema) })`. Errores tipados via `z.infer`.
+- **Server Actions (Next.js):** `safeParse(formData)` en boundary. Devolver `{ errors: parsed.error.flatten().fieldErrors }`.
+- **tRPC integration:** `.input(CreatePostSchema)` valida y tipa input automáticamente.
+
+### ArkType v2 — Alternativa a Zod (2-10x más rápido)
+
+- **TypeScript-first syntax:** `const User = type({ id: 'string.uuid', email: 'string.email', age: 'number.integer >= 0 <= 150' })` — parece TS nativo.
+- **Discriminated unions nativos:** `type([{ status: "'success'", data: 'unknown' }, { status: "'error'", error: 'string' }])`. Narrowing automático.
+- **Inferencia:** `typeof User.infer` directo (vs `z.infer<typeof>`).
+
+| Característica | ArkType | Zod |
+|----------------|---------|-----|
+| Performance parse | 2-10x más rápido (~300k ops/s) | Bueno (~40k ops/s) |
+| Bundle size | ~15KB gzip | ~20KB gzip |
+| Discriminated unions | Nativo | `z.discriminatedUnion()` |
+| Ecosistema | Menor, creciendo | Maduro |
+
+### TanStack Query v5 — Server State Type-Safe
+
+- **Tipado end-to-end:** `useQuery<UserResponse, Error>({ queryKey: ['user', id], queryFn: () => fetchUser(id) })`.
+- **Zod validation en queryFn:** `return UserResponseSchema.parse(data)` — runtime + compile-time.
+- **useMutation con optimistic updates:** `onMutate` cancela queries + setQueryData, `onError` rollback con `context.previous`, `onSettled` invalidate.
+- **Infinite queries:** `useInfiniteQuery({ getNextPageParam: (last) => last.hasMore ? pages.length * 20 : undefined })`.
+- **Configuración:** `staleTime: 5 * 60 * 1000` (5min), `gcTime: 30 * 60 * 1000` (30min garbage collection), `retry: 3`, `retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000)`.
+
+### Buenas Prácticas E2E
+
+1. **Schemas en un solo lugar:** Paquete `@myapp/validators` compartido entre server y client.
+2. **`z.infer` para tipos:** No duplicar interfaces manualmente.
+3. **Valida en la frontera:** Cada request entrante pasa por Zod antes de tocar lógica de negocio.
+4. **Parse, no confíes:** `.parse()` o `.safeParse()` en datos externos (API, localStorage, URL params).
+5. **Discriminated unions para errores:** `Result<T, E> = { ok: true; value: T } | { ok: false; error: E }` en vez de `throw`.
+6. **Nunca `any`:** Si no puedes tipar, usa `unknown` + valida con Zod.
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with arquitectura-typesafe)*

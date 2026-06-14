@@ -1,6 +1,6 @@
 ---
 name: design-systems-atomic
-description: "Design Systems provide a single source of truth for UI components, patterns, and design decisions"
+description: "Design Systems provide a single source of truth for UI components, patterns, and design decisions. Covers branding, brand identity, visual identity, tokens, atomic design, storybook, guía de estilo, coherencia, escalabilidad, arquitectura visual"
 ---
 # Design Systems & Atomic Design
 
@@ -375,4 +375,164 @@ tags: [design-system, atomic-design, design-tokens, w3c-tokens, theming, css-var
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Fundamentos de Branding
+
+El branding es la **gestión estratégica de percepciones**. Cada componente que un usuario ve, cada interacción, cada transición — todo comunica.
+
+| Componente | Definición | Aplicación |
+|-----------|-----------|-----------|
+| Misión | Propósito fundamental | ¿Maestría técnica? ¿Lealtad? ¿Participación? |
+| Visión | Aspiración futura | ¿Más niveles? ¿Animación? |
+| Personalidad | Rasgos humanos | ¿Serio (LinkedIn) o irreverente (Discord)? |
+
+**Marca vs. Branding vs. Identidad Visual:**
+- **Marca (Brand):** Percepción acumulada en la mente del público. No la controlas; la gestionas.
+- **Branding:** Proceso activo de construir y gestionar esa percepción.
+- **Identidad Visual:** Sistema tangible: colores, tipografías, formas, iconografía.
+
+### Cinco Pilares de Coherencia Visual
+
+1. **Paleta de Color:** 3-4 colores funcionales por era. Color con significado: rojo=peligro/logro, dorado=maestría, azul=confianza.
+2. **Jerarquía Tipográfica:** Ícono/shape 60-70% | Título 20-25% | Nivel/era 10-15%.
+3. **Morfología Consistente:** Círculo/escudo=protección, Polígono/estrella=logro, Forma orgánica=creatividad.
+4. **Sistema de Elevación:** Bajo=planos sin sombra, Medio=gradiente suave, Alto=brillo metálico.
+5. **Animación y Micro-interacciones:** Refuerzan identidad (transición suave=pulcritud, explosión de partículas=celebración).
+
+### Branding Streetwear — Economía del Hype
+
+| Pilar | Aplicación a Componentes |
+|-------|--------------------------|
+| Escasez | Badges de tiempo limitado |
+| Autenticidad | Componentes verificados |
+| Tribu | Badges que solo comparten "los que estuvieron" |
+| Narrativa | Componentes con lore de logro real |
+
+**Modelos de drop:**
+- **Supreme (semanal y limitado):** Insignias semanales para challenges rotativos, sin re-emisión.
+- **Palace (temporal y sorpresivo):** Flash 24-48h, anuncio después de obtenible.
+- **Off-White (colaboración):** Componentes que fusionan dos comunidades.
+
+### Rareza y Progresión Visual
+
+| Rareza | Probabilidad | Tratamiento Visual |
+|--------|-------------|-------------------|
+| Common | 60% | Color sólido, forma simple |
+| Uncommon | 25% | Gradiente suave, borde definido |
+| Rare | 10% | Glow sutil, forma compuesta |
+| Epic | 4% | Animación, brillo metálico |
+| Legendary | 1% | Partículas, glow pulsante |
+
+### Ecuación del Componente Efectivo
+
+```
+Valor Percibido = (Exclusividad × Rareza) + (Diseño / Esfuerzo de Obtención)
+```
+
+### Variables de Progresión
+
+| Variable | Bajo nivel | Medio nivel | Alto nivel |
+|----------|-----------|-------------|-----------|
+| Saturación | 30-50% | 60-80% | 90-100% |
+| Contorno | 1px sólido | 2px glow | 3px glow animado |
+| Forma | Simple (círculo) | Compuesta (escudo) | Compleja (polígono facetado) |
+| Materialidad | Mate, plano | Satinado | Metálico con brillo |
+
+### Arquitectura de Tokens (3 Capas)
+
+```
+1. Tokens Globales (Base)        — color, tipografía, espaciado, borde
+2. Tokens Semánticos (Propósito) — badge-bg-primary, badge-text-on-dark
+3. Tokens de Componente          — Badge.container.padding, Badge.glow.intensity
+```
+
+```json
+// Tokens Semánticos
+{
+  "color": {
+    "badge-bg-primary": "{color.rojo-primario}",
+    "badge-text-on-dark": "{color.blanco-puro}",
+    "badge-border-legendary": "rgba(220,38,38,0.8)"
+  },
+  "sombra": { "badge-shadow-lg": "0 4px 20px rgba(220,38,38,0.4)" }
+}
+```
+
+### Style Dictionary (Amazon)
+
+```bash
+style-dictionary build
+# Output: tokens.css → :root { --color-rojo: #DC2626; }
+#          tokens.js  → export const red = '#DC2626'
+#          tokens.json
+```
+
+Transforma tokens a todos los formatos necesarios (CSS, JS, JSON, iOS, Android).
+
+### Principios de Coherencia Visual Sistémica
+
+**Contraste:** Opera en luminancia (ratio WCAG), saturación/matiz, tamaño. Alto contraste=energía. Bajo=sutileza.
+
+**Repetición:** Crea ritmo. Ojo detecta interrupciones en 50-100ms. Usar 3-5-7 repeticiones (impares).
+
+**Alineación:** Cada elemento conectado visualmente. Axial para badges, perimetral, o grid 4×4/8×8px. Desalineación intencional=phonk.
+
+**Proximidad (Gestalt):** Elementos relacionados agrupados a ≤8px. Espaciado modular 4-8-16px.
+
+**Movimiento Implícito:** En SVG estático: diagonales (velocidad), asimetría (avance), difuminado direccional (estela).
+
+### Jerarquía Visual
+
+- **Tamaño:** Relación logarítmica — 2× más grande se percibe 4× más importante.
+- **Color:** Orden de atención: Rojo puro → Amarillo/neón → Blanco → Naranja → Azul cian → Grises.
+- **Espacio (técnica del pedestal):** Elemento con 15px+ de espacio vacío se percibe más importante.
+
+### Escalabilidad Visual
+
+El sistema debe funcionar en: 16px (tooltip), 36px (grid), 72px (perfil), 128px (detalle), 256px (merchandising).
+
+| Tamaño | Elementos | Detalle |
+|--------|-----------|---------|
+| 16px | 1-2 | Silueta + 1 color |
+| 36px | 2-3 | Forma + icono + glow sutil |
+| 72px | 3-5 | Forma + icono + glow + textura |
+| 128px+ | 5-8 | Completo con partículas |
+
+### Storybook — Documentación como Fuente de Verdad
+
+```mdx
+<Meta title="Componentes/Badge Era 4" component={Badge} />
+# Badge Era 4 — Maestría
+Los badges de Era 4 usan blanco como color principal con glow rojo sutil.
+<Story name="Default"><Badge era={4} level={45} type="social" /></Story>
+```
+
+- Stories para cada estado (común, hover, active, disabled, legendario, animado)
+- Controles para ajustar tokens en vivo
+- Documentación MDX con reglas de uso
+- Snapshot testing
+
+### Principios del Sistema
+
+1. **Consistencia sobre variedad:** 20 variantes predecibles > 100 caóticas
+2. **Jerarquía clara:** Rareza debe leerse en 200ms
+3. **Rendimiento primero:** SVG optimizado, animaciones con `will-change`, evitar recálculos
+4. **Accesibilidad:** Contraste mínimo 4.5:1 texto, 3:1 gráficos grandes
+
+### Checklist de Calidad por Componente
+
+- [ ] ¿Usa tokens existentes? (no hardcode colors)
+- [ ] ¿Se distingue de su nivel anterior y siguiente?
+- [ ] ¿Funciona en fondos claro, oscuro y personalizados?
+- [ ] ¿SVG < 2KB optimizado?
+- [ ] ¿Animación respeta `prefers-reduced-motion`?
+- [ ] ¿Documentado en Storybook?
+- [ ] ¿Pasa validación contraste WCAG AA?
+- [ ] ¿Culturalmente apropiado para audiencia objetivo?
+- [ ] ¿Reconocible al 200% de zoom?
+- [ ] ¿Testeado en 3 tipos de daltonismo?
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with brand-identity + visual-architecture)*

@@ -1,6 +1,6 @@
 ---
 name: websockets-sse-realtime
-description: "WebSockets provide full-duplex communication over a single TCP connection"
+description: "WebSockets provide full-duplex communication over a single TCP connection. Covers event-driven architecture, PostgreSQL LISTEN/NOTIFY, Supabase Realtime, CQRS, Event Sourcing, tiempo real, real-time, eventos, WebSockets, SSE, message queues, outbox pattern, CDC, Change Data Capture, Prisma Pulse"
 ---
 # WebSockets, SSE & Realtime Communication
 
@@ -289,4 +289,196 @@ tags: [websocket, sse, realtime, socket.io, server-sent-events, bidirectional, s
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Event-Driven vs Request-Driven
+
+| Aspecto | Request-Driven | Event-Driven |
+|---------|---------------|--------------|
+| Acoplamiento | Cliente conoce servidor | Productor no conoce consumidor |
+| Comunicación | Síncrona (request/response) | Asíncrona (evento no bloquea) |
+| Escalabilidad | Vertical (más servidores) | Horizontal (consumidores independientes) |
+| Resiliencia | Falla en cascada | Aislamiento por consumidor |
+| Auditabilidad | Limitada | Total (event store) |
+| Consistencia | Fuerte (transaccional) | Eventual |
+
+### Componentes Fundamentales
+
+1. **Event Producer** — genera eventos (ej: servicio de usuarios al crear cuenta)
+2. **Event Bus** — canal de transporte (PostgreSQL LISTEN/NOTIFY, Redis, Kafka)
+3. **Event Consumer** — reacciona al evento
+4. **Event Store** — almacén persistente (opcional, para Event Sourcing)
+
+### Event Schema (bien formado)
+
+```json
+{
+  "id": "evt_01J123456789abcdef",
+  "type": "user.created",
+  "version": 1,
+  "source": "users-service",
+  "timestamp": "2025-06-10T14:30:00Z",
+  "data": { "userId": "usr_abc123", "email": "user@example.com" },
+  "metadata": { "correlationId": "corr_xyz", "causationId": "cmd_yzx" }
+}
+```
+
+### PostgreSQL LISTEN/NOTIFY
+
+```sql
+-- Trigger + NOTIFY
+CREATE OR REPLACE FUNCTION notify_new_user()
+RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify('events', json_build_object(
+    'type', 'user.created', 'userId', NEW.id, 'email', NEW.email
+  )::text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_notify_new_user
+  AFTER INSERT ON users
+  FOR EACH ROW EXECUTE FUNCTION notify_new_user();
+```
+
+```javascript
+// Consumidor Node.js
+import pg from 'pg'
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+async function listenToEvents() {
+  const client = await pool.connect()
+  await client.query('LISTEN events')
+  client.on('notification', (msg) => handleEvent(JSON.parse(msg.payload)))
+  setInterval(async () => await client.query('SELECT 1'), 30000) // keep alive
+}
+```
+
+**Limitaciones:** scope solo en mismo cluster, no persistente (evento se pierde si nadie escucha), payload máximo 8000 bytes, buffer en memoria del backend.
+
+### Supabase Realtime v2 (Go server, pgoutput)
+
+| Tipo | Descripción | Persistencia | Autorización |
+|------|-------------|-------------|--------------|
+| Broadcast | Mensajes efímeros entre clientes (chat, cursor) | No | RLS opcional |
+| Presence | Estado sincronizado de clientes conectados | En memoria | RLS |
+| Postgres Changes | CDC de tablas PostgreSQL vía logical replication | No (streaming) | RLS por row |
+
+```javascript
+// Broadcast
+const channel = supabase.channel('room-1', {
+  config: { broadcast: { self: true, ack: true }, presence: { key: 'user-id' } }
+})
+channel.on('broadcast', { event: 'cursor' }, (payload) => console.log(payload))
+channel.send({ type: 'broadcast', event: 'cursor', payload: { x: 100, y: 200 } })
+
+// Presence
+channel.on('presence', { event: 'sync' }, () => console.log('Online:', Object.keys(channel.presenceState()).length))
+
+// Postgres Changes (CDC)
+supabase.channel('db-changes').on('postgres_changes',
+  { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
+  (payload) => console.log('New message:', payload.new)
+).subscribe()
+```
+
+**RLS en Realtime:** Para que un cliente reciba cambios, debe tener permiso SELECT. Habilitar con `ALTER PUBLICATION supabase_realtime ADD TABLE messages`.
+
+### CQRS y Event Sourcing
+
+```
+Client → Command (POST /orders) → Command Handler → Write DB (normalized)
+Client → Query (GET /orders)    → Query Handler  → Read DB (denormalized)
+```
+
+```javascript
+// COMMAND — escribe en DB normalizada
+async function createOrder(command) {
+  const order = await db.order.create({ data: { userId: command.userId, status: 'PENDING' } })
+  await pgNotify('events', JSON.stringify({ type: 'order.created', orderId: order.id }))
+  return order
+}
+
+// QUERY — lee de vista desnormalizada
+async function getOrderSummary(userId) {
+  return db.orderSummary.findUnique({ where: { userId }, select: { totalOrders: true, totalSpent: true } })
+}
+```
+
+**Event Sourcing:** Almacenar secuencia de eventos como fuente de verdad. Estado actual = fold(Event[]).
+
+### Outbox Pattern (Consistencia Transaccional)
+
+```javascript
+async function createOrder(command) {
+  const { orderId } = await db.$transaction(async (tx) => {
+    const order = await tx.order.create({ data: { ... } })
+    await tx.outboxMessage.create({
+      data: { type: 'order.created', aggregateId: order.id, payload: {...}, status: 'PENDING' }
+    })
+    return { orderId: order.id }
+  })
+}
+
+// Procesador cada 5s
+async function processOutbox() {
+  const messages = await db.outboxMessage.findMany({ where: { status: 'PENDING' }, take: 100 })
+  for (const msg of messages) {
+    try {
+      await pgNotify('events', JSON.stringify({ type: msg.type, data: msg.payload }))
+      await db.outboxMessage.update({ where: { id: msg.id }, data: { status: 'SENT' } })
+    } catch (error) {
+      await db.outboxMessage.update({ where: { id: msg.id }, data: { status: 'FAILED', retryCount: { increment: 1 } } })
+      if (msg.retryCount >= 5) await db.deadLetterQueue.create({ data: { ...msg } })
+    }
+  }
+}
+setInterval(processOutbox, 5000)
+```
+
+### Prisma Pulse (CDC 2024+)
+
+```javascript
+import { PrismaClient } from '@prisma/client'
+import { withPulse } from '@prisma/extension-pulse'
+
+const prisma = new PrismaClient().$extends(withPulse({ apiKey: process.env.PULSE_API_KEY }))
+
+async function watchOrders() {
+  const stream = await prisma.order.stream({ create: true, update: true, delete: true })
+  for await (const event of stream) {
+    if (event.action === 'create') await updateOrderSummary(event.created.userId)
+  }
+}
+```
+
+Pulse se conecta a logical replication de PostgreSQL y transforma cambios WAL en eventos. Reemplaza outbox processor y sincronizadores custom para vistas CQRS.
+
+### Tabla Comparativa de Tecnologías
+
+| Característica | LISTEN/NOTIFY | Supabase Realtime | Redis Pub/Sub | Kafka |
+|---------------|---------------|-------------------|---------------|-------|
+| Persistencia | No | No | No | Sí (configurable) |
+| Latencia | <1ms | <10ms | <1ms | <10ms |
+| Escalabilidad | Cluster PG | Horizontal (Go) | Horizontal | Horizontal (partitions) |
+| Payload max | 8KB | ~1MB | ~512MB | ~1MB |
+| Orden garantizado | Por canal/backend | No | No | Sí (por partición) |
+| Replays históricos | No | No | No | Sí (offset reset) |
+| Ideal para | Cache invalidation, notif. ligeras | Chat, presence, colab streaming | Task queues, pub/sub liviano | Event sourcing, audit logs, ETL |
+
+### Cuándo usar cada uno
+
+- **LISTEN/NOTIFY:** notificaciones entre microservicios que comparten PostgreSQL, invalidación de caché.
+- **Supabase Realtime:** chat, cursor multiplayer, presence, CDC con RLS granulado. Cuando ya usas Supabase.
+- **Redis Pub/Sub:** pub/sub liviano, colas de tareas, rate limiting. No persistencia ni replays.
+- **Kafka:** event sourcing, streaming masivo, pipelines ETL, audit logs, reprocesamiento histórico.
+
+### Patrones Avanzados
+
+- **Dead Letter Queue (DLQ):** Eventos que fallan ≥5 reintentos se mueven a DLQ para inspección manual.
+- **Event Versioning:** Upcasters transforman `v1` → `v2` al leer. Permite evolución de schema sin breaking changes.
+- **Sagas:** Orquestación de multi-step con compensación. `createOrderSaga()` ejecuta pasos + compensa en orden inverso si falla.
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with event-driven-tiempo-real)*

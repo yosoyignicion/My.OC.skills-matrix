@@ -1,6 +1,6 @@
 ---
 name: next-js-app-router
-description: "Next.js App Router (introducido en v13.4, estable desde v14) es un enrutador basado en el sistema de archivos que convierte cada carpeta en una ruta y cada archivo `page.tsx` en una vista pública"
+description: "Next.js App Router (introducido en v13.4, estable desde v14) es un enrutador basado en el sistema de archivos que convierte cada carpeta en una ruta y cada archivo `page.tsx` en una vista pública. Covers Next.js 16, React Router v7, Astro 6, React Server Components, App Router, Islands Architecture, SSG, SSR, full-stack React, meta-frameworks comparison"
 ---
 # Next.js App Router
 
@@ -321,4 +321,60 @@ tags: [next.js, app-router, server-components, server-actions, react, fullstack]
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Panorama de Meta-Frameworks Web 2026
+
+| Framework | Versión | Bundle JS default | SSG | SSR | ISR | RSC | Streaming | Islands |
+|-----------|---------|-------------------|-----|-----|-----|-----|-----------|---------|
+| Next.js | 16.2.9 | 0 (RSC) | Si | Si | Si | Si | Si | Parcial |
+| React Router | 7.17.0 | 0 (framework mode) | Si | Si | No | No | Si | No |
+| Astro | 6.4.5 | ~0 (Islands) | Si | Si | No | No | No | Si |
+
+### Next.js 16 — Novedades
+
+- **Cache Components:** Componentes que cachean su salida a nivel de servidor. `unstable_cache` + `next.cache.set/get` (key-value similar a Redis integrado en runtime).
+- **Turbopack Stable:** Bundler default en dev y prod (HMR <50ms, builds 10x más rápidos que webpack, soporte RSC nativo).
+- **React Compiler:** `reactCompiler: true` en `next.config.ts` elimina `useMemo`/`useCallback`/`React.memo`. Compilador memoiza automáticamente.
+- **proxy.ts (formerly middleware.ts):** `middleware.ts` renombrado a `proxy.ts`. Edge proxy que inspecciona/modifica requests antes del server. Soporta `req.geo` para country-based routing.
+
+### React Router v7 (antes Remix)
+
+Framework mode = evolución de Remix v3. API central:
+
+- **Route Config tipado:** `app/routes.ts` con `route()`, nested routes.
+- **Loader/Action:** Cargas paralelas en una sola HTTP request (Single Fetch), `defer()` para datos críticos vs lentos, `<Await>` con `<Suspense>`.
+- **Progressive Enhancement:** Forms funcionan sin JS, mejorados con fetch cuando JS está disponible.
+- Cuándo preferir RRv7 sobre Next.js: apps con mucha interacción del usuario, control granular sobre data loading, sin necesidad de RSC.
+
+### Astro 6
+
+- **Islands Architecture:** HTML estático + islas interactivas con directivas `client:load`/`client:idle`/`client:visible`/`client:media`/`client:only`.
+- **Content Collections con Zod:** `defineCollection({ type: 'content', schema: ({ image }) => z.object({...}) })` — type-safe markdown/MDX.
+- **Server Islands:** `server:defer` para contenido dinámico dentro de páginas estáticas, sin JS del cliente.
+- **Built-in CSP:** `astro.config.mjs` con `security.csp.directives` para Content Security Policy integrado.
+- **Rust Compiler (experimental):** 3-5x build más rápido, dev server <100ms.
+- Cuándo preferir Astro: blogs, docs, marketing, landing pages, bundles JS mínimos, multi-framework UI (React + Svelte + Vue simultáneo).
+
+### Matriz de Decisión Rápida
+
+| Criterio | Next.js | React Router v7 | Astro |
+|----------|---------|-----------------|-------|
+| Dashboard admin | Mejor | Bueno | Regular |
+| Blog / CMS / Docs | Bueno | Regular | Mejor |
+| E-commerce | Mejor | Bueno | Bueno |
+| Landing page | Bueno | Regular | Mejor |
+| SEO crítico | Bueno | Regular | Mejor |
+| Bundle JS mínimo | Regular | Regular | Mejor |
+| API routes | API Routes | loader/action | API endpoints |
+| Deploy serverless | Vercel | Cloudflare/Fly | Netlify/Cloudflare |
+
+### Migraciones Clave
+
+- **Next.js 15 → 16:** Renombrar `middleware.ts` a `proxy.ts`; activar `reactCompiler: true`; migrar `getServerSideProps` a App Router.
+- **Remix → React Router v7:** `npm install react-router@latest`; `@remix-run/node` → `react-router`; actualizar `vite.config.ts` al plugin de react-router.
+- **Astro 5 → 6:** Activar Rust compiler experimental; actualizar schemas Zod con `image()` API; migrar a Live Content Collections.
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with meta-frameworks-web)*

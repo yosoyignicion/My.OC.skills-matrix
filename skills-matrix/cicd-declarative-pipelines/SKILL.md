@@ -1,6 +1,6 @@
 ---
 name: cicd-declarative-pipelines
-description: "Los pipelines CI/CD declarativos se definen como código YAML dentro del repositorio (.github/workflows/ o .gitlab-ci.yml)"
+description: "Los pipelines CI/CD declarativos se definen como código YAML dentro del repositorio (.github/workflows/ o .gitlab-ci.yml). Covers integración, sistema, CI/CD, automation, despliegue, pipeline, build system, asset pipeline, DevOps, BackstopJS, SVGO, Sharp"
 ---
 # CI/CD Declarative Pipelines
 
@@ -247,4 +247,178 @@ tags: [ci-cd, github-actions, gitlab-ci, pipelines, matrix-build, oidc, automati
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Pipeline de Assets (Badge/Design System) + CI/CD
+
+```
+/src/svg/[01-20].svg
+  → 1. SVGO multipass (optimización AST)
+  → 2. Sharp rasterización (SVG→PNG 36×36)
+  → 3. Re-color por era (Node script)
+  → 4. pngquant compresión (cuantización paleta)
+  → 5. zopfli deflate extremo
+  → 6. Exportación multi-formato (PNG/WebP/AVIF)
+  → /dist/[era]/[formato]/[01-20].*
+```
+
+### Asset Pipeline en GitHub Actions
+
+```yaml
+# .github/workflows/badge-build.yml
+name: badge-build
+on:
+  push:
+    paths: ['src/svg/**', 'scripts/**']
+  pull_request:
+    paths: ['src/svg/**', 'scripts/**']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - name: SVGO optimization
+        run: npx svgo -f src/svg/ -o dist/svg/ --multipass
+      - name: Rasterize + pngquant
+        run: node pipeline.js
+      - name: Visual regression testing
+        run: npx backstopjs test
+      - uses: actions/upload-artifact@v4
+        with:
+          path: dist/
+          name: badge-assets-${{ github.sha }}
+```
+
+### Automatización Completa
+
+| Herramienta | Función | Output típico |
+|-------------|---------|---------------|
+| SVGO multipass | Optimización SVG AST | 2KB → 1KB (-50%) |
+| Sharp | Rasterización | SVG → PNG 36×36 |
+| pngquant | Cuantización paleta | 5KB → 1KB (-80%) |
+| zopfli | Deflate extremo | 1KB → 0.7KB (-30%) |
+| BackstopJS | Visual regression testing | Detect layout shifts |
+| ImageMagick | Conversión batch | PDF → PNG, format change |
+
+### Despliegue y Distribución de Assets
+
+```yaml
+# Deploy a CDN
+deploy-assets:
+  needs: [build]
+  runs-on: ubuntu-latest
+  permissions:
+    id-token: write
+    contents: read
+  steps:
+    - uses: actions/checkout@v4
+    - name: Upload to Cloudflare R2 / S3
+      run: |
+        aws s3 sync dist/ s3://my-bucket/badges/ --cache-control max-age=31536000
+        npx cloudflare-cli r2 sync dist/ badges/
+```
+
+**Prácticas:**
+- Cache invalidation por hash de contenido (e.g., `badge-{hash}.png`)
+- Versionado semántico de eras (v1, v2, v3)
+- Health checks en build: tamaño, formato, resolución
+- Content-Type correcto por extensión
+- Compresión Brotli/gzip en CDN
+
+### Pipeline Completo Unificado (CI + Asset + Deploy)
+
+```yaml
+name: full-pipeline
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'scripts/**', '.github/workflows/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node-version }}', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint && pnpm typecheck
+      - run: pnpm test --coverage
+
+  build-assets:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: node pipeline.js  # SVGO + Sharp + pngquant
+      - run: npx backstopjs test  # visual regression
+      - uses: actions/upload-artifact@v4
+        with:
+          path: dist/
+
+  deploy:
+    needs: [build-assets]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE }}
+      - run: aws s3 sync dist/ s3://prod-bucket/
+```
+
+### Health Checks Automatizados
+
+```bash
+# Verificar tamaño máximo
+find dist/ -size +2k -name "*.png" && exit 1
+
+# Verificar formato correcto
+file dist/**/*.png | grep -v "PNG image"
+
+# Verificar resolución mínima
+for f in dist/*.png; do identify -format "%w x %h" "$f"; done
+```
+
+### Tabla de Decisión: Cuándo usar Cada Runner
+
+| Runner | Caso de uso | Minutos gratis/mes |
+|--------|-------------|-------------------|
+| ubuntu-latest | Builds estándar, Node, Python, Go | 2000 |
+| windows-latest | .NET, PowerShell, tests en Windows | 2000 |
+| macos-latest | iOS, Xcode, Swift | 200 (10x costo) |
+| self-hosted | GPU, hardware específico, datos sensibles | Ilimitado (infraestructura propia) |
+
+### VRT (Visual Regression Testing)
+
+```javascript
+// backstop.json
+{
+  "id": "badge-vrt",
+  "viewports": [{ "label": "36x36", "width": 36, "height": 36 }],
+  "scenarios": [
+    { "label": "Era 1", "url": "http://localhost:3000/badge/01/era-1" },
+    { "label": "Era 4", "url": "http://localhost:3000/badge/01/era-4" }
+  ],
+  "expect": 0.01,  // 1% pixel diff tolerance
+  "misMatchThreshold": 0.1
+}
+```
+
+Detecta cambios visuales no intencionales después de optimizaciones SVGO o cambios de tokens.
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with system-integration)*

@@ -1,6 +1,6 @@
 ---
 name: owasp-top-10-mitigation
-description: "OWASP Top 10 (2021) clasifica los riesgos de seguridad web más críticos: A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection, A04 Insecure Design, A05 Security Misconfiguration, A0..."
+description: "OWASP Top 10 (2021) clasifica los riesgos de seguridad web más críticos. Covers seguridad web, Zod/ArkType validation, Server Actions CSRF, rate limiting, validación, seguridad defensiva, input validation, sandboxing, autenticación, autorización, CSP, CORS, SQL injection, XSS, type safety, trusted types, HTTP security headers, micro-VM, Firecracker"
 ---
 # owasp-top-10-mitigation
 
@@ -210,4 +210,167 @@ tags: [owasp, top-10, sql-injection, xss, ssrf, access-control, web-security]
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Defense in Depth para Meta-Frameworks
+
+```
+Layer 1: Network → CDN + WAF (Cloudflare, AWS Shield)
+Layer 2: Edge → Rate limiting, IP blocking, auth check
+Layer 3: Application → Zod/ArkType validation, CSRF tokens
+Layer 4: Data Access → Parameterized queries, ORM validation
+Layer 5: Storage → Encryption at rest, access control
+```
+
+> **Nunca confíes en input del cliente. Valida TODO en servidor.**
+
+### Validación con Zod (Server-Side)
+
+```typescript
+// lib/validations/schemas.ts — compartido cliente y servidor
+export const createUserSchema = z.object({
+  email: z.string().email().max(255).transform(e => e.toLowerCase().trim()),
+  name: z.string().min(2).max(100).regex(/^[a-zA-ZáéíóúñÑ\s'-]+$/),
+  age: z.number().int().min(18).max(120),
+  role: z.enum(['user', 'admin', 'moderator']).default('user')
+})
+
+// SuperRefine para validación compleja
+export const paymentSchema = z.object({...}).superRefine((data, ctx) => {
+  if (!luhnCheck(data.cardNumber)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['cardNumber'] })
+})
+```
+
+**Ataques que Zod previene:** type confusion, SQL injection, XSS (no ejecuta, solo valida), prototype pollution, mass assignment, buffer overflow, non-printable chars.
+
+### ArkType — Alternativa 2-10x más rápida
+
+```typescript
+import { type } from 'arktype'
+const User = type({
+  id: 'string > 0',
+  email: 'string.email',
+  name: '2 < string < 100',
+  age: '18 <= number.integer <= 120',
+  role: "'user' | 'admin' | 'moderator'"
+})
+type UserType = typeof User.infer // inferred nativo
+```
+
+**Zod vs ArkType vs Yup:** ArkType gana en performance (3ms vs 15ms en 1k validaciones) y bundle (7KB vs 12KB). Zod gana en ecosistema (zod-to-openapi, zod-to-json-schema).
+
+### Server Actions Security (Next.js / Remix)
+
+- **CSRF Protection Automática:** Next.js 13+ y Remix envían cookie con secreto + header `X-Action`. Server compara. Sin configuración.
+- **Manual (API Routes):** `crypto.randomUUID()` en cookie httpOnly+secure+sameSite=lax. Comparar con header en POST.
+- **Rate Limiting con Upstash Redis:**
+
+```typescript
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
+
+const rateLimitByIP = new Ratelimit({
+  redis, limiter: Ratelimit.slidingWindow(10, '10 s'), prefix: 'ratelimit:ip'
+})
+const rateLimitLogin = new Ratelimit({
+  redis, limiter: Ratelimit.slidingWindow(5, '15 m'), prefix: 'ratelimit:login'
+})
+
+// En middleware.ts
+const { success, limit, remaining, reset } = await rateLimitByIP.limit(ip)
+if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': ..., 'X-RateLimit-Limit': ..., 'X-RateLimit-Remaining': ... } })
+```
+
+- **Authorization dentro de Server Actions:**
+
+```typescript
+'use server'
+export async function deletePost(postId: string) {
+  const session = await getAuthSession()
+  if (!session?.user?.id) return { success: false, error: 'No autorizado' }
+  const post = await prisma.post.findUnique({ where: { id: postId } })
+  if (post.authorId !== session.user.id && session.user.role !== 'admin')
+    return { success: false, error: 'Sin permiso' }
+  await prisma.post.delete({ where: { id: postId } })
+  revalidatePath('/posts')
+}
+```
+
+### HTTP Security Headers (next.config.js)
+
+```typescript
+{
+  source: '/(.*)',
+  headers: [
+    { key: 'Content-Security-Policy', value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https:; connect-src 'self' https://api.example.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" },
+    { key: 'X-Content-Type-Options', value: 'nosniff' },
+    { key: 'X-Frame-Options', value: 'DENY' },
+    { key: 'X-XSS-Protection', value: '0' },
+    { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+    { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self), interest-cohort=()' },
+    { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' }
+  ]
+}
+```
+
+### Micro-VM Sandboxing
+
+- **Node.js Permission Model (experimental):** `node --experimental-permission --allow-fs-read=./app --allow-fs-write=./.next server.js`. Restringe capabilities a runtime.
+- **Web Workers + `eval` con timeout:**
+
+```typescript
+const worker = new Worker(`...`, {
+  eval: true,
+  resourceLimits: { maxOldGenerationSizeMb: 64 },
+  workerData: { allowedModules }
+})
+const timeoutId = setTimeout(() => worker.terminate(), 5000)
+```
+
+- **Firecracker (AWS Lambda, Fly.io):** MicroVMs en <125ms boot, ~5MB memory overhead, isolation hardware-level (KVM). Casos: multi-tenant code execution, CI/CD runners, sandboxing de compilaciones.
+
+### Output Sanitization (XSS)
+
+```typescript
+import DOMPurify from 'dompurify'
+import { JSDOM } from 'jsdom'
+const purify = DOMPurify(new JSDOM('').window as any)
+function sanitizeHtml(dirty: string): string {
+  return purify.sanitize(dirty, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'a', 'ul', 'ol', 'li'],
+    ALLOWED_ATTR: ['href'],
+    FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick']
+  })
+}
+```
+
+### Logging y Auditoría
+
+```typescript
+async function logAudit(event: AuditEvent) {
+  console.log(JSON.stringify({ level: 'audit', ...event, timestamp: new Date().toISOString() }))
+  await prisma.auditLog.create({ data: event })
+  if (!event.success) await alertSecurityTeam(event) // patrones sospechosos
+}
+```
+
+### Checklist OWASP + Seguridad Defensiva
+
+- [ ] Todo input validado con Zod/ArkType en servidor
+- [ ] Schemas compartidos cliente↔servidor
+- [ ] Server Actions verifican auth + authz
+- [ ] Rate limiting en middleware y Server Actions
+- [ ] CSRF protection activa (auto en Next.js 14+)
+- [ ] HTTP Security Headers configurados
+- [ ] Cookies HttpOnly + Secure + SameSite
+- [ ] Output sanitizado antes de renderizar HTML no confiable
+- [ ] Logging de auditoría
+- [ ] Sin secretos en cliente
+- [ ] File uploads validan tipo, tamaño, contenido
+- [ ] Permission model de Node.js en producción
+- [ ] Dependencias actualizadas (npm audit)
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with seguridad-defensiva-web)*

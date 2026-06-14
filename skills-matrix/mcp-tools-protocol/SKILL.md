@@ -1,6 +1,6 @@
 ---
 name: mcp-tools-protocol
-description: "Model Context Protocol (MCP) es un protocolo JSON-RPC 2.0 que estandariza la exposición de capacidades del agente como herramientas invocables: cada tool tiene nombre, descripción, y schema JSON de..."
+description: "Model Context Protocol (MCP) es un protocolo JSON-RPC 2.0 que estandariza la exposición de capacidades del agente como herramientas invocables. Covers Vercel AI SDK 6, MCP 2025, LangChain, AI agents, LLM integration, streaming AI, generative UI, Edge AI, AI SDK, tool calling, RAG, AI agent orchestration"
 ---
 # mcp-tools-protocol
 
@@ -265,4 +265,87 @@ tags: [mcp, json-rpc, tool-protocol, unix-socket, tool-server, model-context-pro
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Ecosistema de Integración IA 2025-2026
+
+| Característica | Vercel AI SDK 6 | LangChain/LangGraph | MCP |
+|---------------|----------------|---------------------|-----|
+| Lenguaje primario | TypeScript | Python, TS | Multi-SDK |
+| Provider agnostic | OpenRouter (100+) | LangChain providers | Cualquier host compatible |
+| Streaming | Nativo SSE | Callbacks | Transport-dependent |
+| UI components | streamUI, useChat | No nativo | No nativo |
+| Tool calling | Multi-step integrado | Tool abstraction | JSON-RPC exec |
+| Agentes | Agent loop simple | LangGraph DAG avanzado | Host-side orchestration |
+| RAG | Embeddings + retrieval | Pipelines completos | Resource-based |
+| Ideal para | Chat UI, Next.js | Agentes, Python | Tool integration |
+
+### Vercel AI SDK 6 — Provider-Agnostic
+
+```typescript
+import { generateText, streamText } from 'ai'
+import { openai } from '@ai-sdk/openai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { google } from '@ai-sdk/google'
+import { createOpenRouter } from '@ai-sdk/openrouter'
+
+const model = openai('gpt-4o') // o anthropic('claude-sonnet-4-20250514'), google('gemini-2.5-flash')
+```
+
+- **Core API:** `generateText`, `streamText`, `generateObject` (structured output con Zod schema), `generateImage` (DALL-E), `embed`/`embedMany`.
+- **Multi-step tool calling:** `maxSteps: 10` permite ciclos automáticos. `onStepFinish({ step, text })` para observabilidad.
+- **UI Hooks React:** `useChat` (chat streaming + multi-step), `useCompletion` (non-chat generation), `useObject` (structured data streaming con Zod).
+- **Data Stream Protocol (DSP):** Eventos SSE tipados: `text-delta`, `reasoning`, `tool-call`, `tool-result`, `source`, `error`, `finish`.
+- **Generative UI con streamUI:** `ai/rsc` renderiza componentes React directamente desde IA con `tools: { showCard: { generate: async ({...}) => <Component /> } }`.
+- **Server Actions Pattern (Next.js):** `result.toDataStreamResponse({ getErrorMessage, headers: { 'X-Provider': model.modelId } })`.
+
+### Model Context Protocol (MCP) — Especificación 2025
+
+- **Arquitectura:** Host (Claude, IDE) ↔ Server (filesystem, github, sql) vía JSON-RPC 2.0 (stdio/HTTP/SSE/Streamable HTTP).
+- **Primitivas:**
+  - **Resources:** Datos externos lectura/subscripción. URI templates dinámicos.
+  - **Tools:** Funciones ejecutables. Schema JSON de input.
+  - **Prompts:** Templates reutilizables con arguments.
+- **Capability Negotiation:** Handshake inicial con `protocolVersion: "2025-03-26"`, `capabilities: { roots, sampling }`, `clientInfo`.
+- **Transportes:** stdio (local servers), HTTP+SSE (remotos), **Streamable HTTP (2025+)** unificado con auth Bearer.
+- **Seguridad:** OAuth 2.0 con user consent, `requiredScopes: ["files:write"]`.
+- **Servidores oficiales:** filesystem, github, sqlite, memory (knowledge graph), puppeteer, brave-search.
+- **SDKs:** TypeScript, Python, Go, Rust, Java, Kotlin, C#.
+
+### LangChain / LangGraph — Orquestación de Agentes
+
+- **LangGraph (DAG-Based):** Modela agentes como grafos acíclicos con `StateGraph`, `MessagesAnnotation`, `addNode`, `addConditionalEdges`. Compila a runtime ejecutable.
+- **Multi-Agent Supervisor Pattern:** `createSupervisor({ agents: [codeAgent, searchAgent, dataAgent], llm, prompt: "delegar a especialistas" })`.
+- **RAG Pipelines:** `RecursiveCharacterTextSplitter` (chunkSize 1000, chunkOverlap 200) → `OpenAIEmbeddings` (text-embedding-3-small) → `MemoryVectorStore` → `createRetrievalChain` con retriever `k: 5`.
+- **LangSmith Observability:** Tracing automático con `LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_PROJECT=my-agent`. Evaluación con `client.evaluate({ datasetName, evaluators: [correctness, relevance] })`.
+
+### Edge AI / AI at the Edge
+
+- **Cloudflare Workers AI:** 300+ modelos GPU. `env.AI.run("@cf/meta/llama-3.3-70b-instruct", { messages, stream: true })`.
+- **Vercel Edge Functions:** `export const runtime = 'edge'` + `streamText({...}).toDataStreamResponse()`. ~50ms cold starts.
+- **AI Gateway:** Capa de abstracción multi-provider con caching (`AI_GATEWAY_CACHE_TTL=300`) y rate limiting (`AI_GATEWAY_RATE_LIMIT=100/min`).
+
+### Cuándo Usar Qué
+
+| Necesidad | Herramienta |
+|-----------|-------------|
+| Chat UI con streaming en Next.js | Vercel AI SDK + useChat |
+| Componentes UI generados por IA | AI SDK streamUI |
+| Agentes complejos multi-paso | LangChain + LangGraph |
+| RAG con documentos | LangChain (load → split → embed → retrieve) |
+| Integrar herramientas en Claude Desktop | MCP |
+| Exponer tools propias a cualquier IA | MCP Server |
+| Plugins de IDE con IA | MCP (VS Code, JetBrains, Cursor nativos) |
+
+### Stack Recomendado
+
+```
+Frontend Chat UI → Vercel AI SDK (useChat + streamText)
+  ├─→ Tool Execution → MCP Servers (filesystem, sqlite, custom)
+  └─→ Complex Agents → LangChain + LangGraph
+                          └─→ Observability → LangSmith
+```
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with integracion-ia-web)*

@@ -1,6 +1,6 @@
 ---
 name: tailwind-css-utility
-description: "Tailwind CSS es un framework CSS utility-first que proporciona clases atómicas de bajo nivel para construir diseños directamente en el marcado"
+description: "Tailwind CSS es un framework CSS utility-first que proporciona clases atómicas de bajo nivel para construir diseños directamente en el marcado. Covers Tailwind v4, Shadcn/ui, Radix Primitives, design systems, theming, CSS variables, accesibilidad, Headless UI, oklch color, oxide engine"
 ---
 # Tailwind CSS Utility
 
@@ -290,4 +290,58 @@ tags: [tailwind, css, utility-first, responsive, design-system, frontend]
 
 ---
 
-*Template v1.0 — 9 secciones. Última actualización: 2026-06-12*
+## Comparativa 2026 / Ecosystem
+
+### Arquitectura de 3 Capas para UI Moderna
+
+| Capa | Tecnología | Versión | Bundle | Enfoque |
+|------|-----------|---------|--------|---------|
+| Utilidad | Tailwind CSS | v4 (2025) | ~10KB (purgeado) | CSS utility-first, build engine Rust |
+| Componentes | Shadcn/ui | 2.9 | Solo los que usas | Copy-paste (no dependencia npm) |
+| Primitivas | Radix | 1.2 | Árbol de módulos | Headless + WAI-ARIA accessible |
+
+### Tailwind v4 — Cambios Críticos
+
+- **CSS-First Configuration:** Elimina `tailwind.config.js`. Todo se configura con `@theme` en CSS nativo. `--color-primary: oklch(0.5 0.2 25)` genera automáticamente `bg-primary`, `text-primary`, etc.
+- **Oxide Engine:** Build engine en Rust basado en Lightning CSS. Builds 50-70% más rápidos (10K+ classes: 300ms vs 1.2s v3). No depende de PostCSS obligatorio.
+- **`@import "tailwindcss"`** reemplaza `@tailwind base/components/utilities`. Una sola importación.
+- **Detección automática de contenido:** Sin `content` paths. Escanea `.js/.jsx/.ts/.tsx/.vue/.svelte/.astro/.html/.mdx` automáticamente.
+- **Espacio oklch():** Percepción uniforme de color, gamut Display P3. `oklch(0.55 0.22 25)` para rojo, `oklch(0.55 0.22 260)` para azul.
+- **Nuevas utilities v4:** `container-3xl`, `text-balance`, `field-sizing-content`, `overscroll-contain`.
+
+### Shadcn/ui (2.9) — Componentes Copiables
+
+- **No es dependencia npm:** Es un CLI que genera código en `components/ui/`. Control total del código.
+- **Theming con CSS Variables:** `--background`, `--foreground`, `--primary`, `--primary-foreground`, `--card`, `--border`, `--radius` con oklch. Cada preset (`default`, `new-york`) define el set.
+- **v4 con Base UI:** Alternativa a Radix como backend. `npx shadcn@latest init --backend base-ui` para Material Design integration.
+- **components.json:** Style, baseColor, cssVariables, aliases (`@/components`, `@/lib/utils`).
+
+### Radix Primitives (1.2) — 30+ Componentes Headless
+
+| Primitiva | Característica clave |
+|-----------|---------------------|
+| Dialog | Modal accesible, focus trap, esc para cerrar |
+| Popover | Posicionamiento con flip/avoid collisions |
+| DropdownMenu | Submenús anidados, keyboard navigation |
+| Select | Combobox pattern, typeahead |
+| Tabs | Activación por teclado, orientación |
+| Tooltip | Delay group, positioning |
+| Toast | Stack, swipe to dismiss |
+| Checkbox | Indeterminate state, tri-state |
+
+- **Composición dot-notation:** `<Dialog.Root>` → `<Dialog.Trigger>` → `<Dialog.Portal>` → `<Dialog.Overlay>` → `<Dialog.Content>`.
+- **WAI-ARIA compliance completa:** `role="dialog"`, `aria-modal="true"`, `aria-labelledby` automático.
+- **Keyboard navigation:** Tab, Arrow, Enter, Esc, Home/End según primitiva.
+- **React 19:** `ref` como prop (no más `forwardRef`), Server Components compatible.
+
+### Integración de las 3 Capas
+
+```
+CSS Variables (oklch) → @theme (Tailwind v4) → cn() + Tailwind classes (Shadcn) → Radix Primitives (a11y)
+```
+
+Dark mode automático: `.dark` selector sobreescribe las CSS variables. `next-themes` para theme switching en runtime.
+
+---
+
+*Template v1.0 — 9 secciones. Última actualización: 2026-06-14 (enriched with sistemas-ui-estilado)*
